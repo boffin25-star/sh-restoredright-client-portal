@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500">
+<rect x="15" y="15" width="470" height="470" rx="8" fill="#0D3B80"/>
+<rect x="34" y="34" width="432" height="432" fill="none" stroke="#fff" stroke-width="10"/>
+<rect x="49" y="49" width="402" height="402" fill="none" stroke="#fff" stroke-width="3"/>
+<text x="250" y="235" text-anchor="middle" fill="#fff" font-family="Arial,Helvetica,sans-serif" font-size="145" font-weight="700">S&amp;H</text>
+<line x1="88" y1="275" x2="412" y2="275" stroke="#fff" stroke-width="5"/>
+<text x="250" y="350" text-anchor="middle" fill="#fff" font-family="Arial,Helvetica,sans-serif" font-size="57" font-weight="700" letter-spacing="5">SERVICES</text>
+<line x1="90" y1="378" x2="410" y2="378" stroke="#fff" stroke-width="3"/>
+<text x="250" y="426" text-anchor="middle" fill="#fff" font-family="Arial,Helvetica,sans-serif" font-size="25" font-weight="700" letter-spacing="7">SPOKANE LLC</text>
+</svg>
