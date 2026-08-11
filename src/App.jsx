@@ -506,6 +506,132 @@ function ApprovalsView({ jobs, clientName }) {
   return <MessagesView jobs={jobs} clientName={clientName} />;
 }
 
+function ContentsView({ jobs, clientName }) {
+  const [boxes,setBoxes]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [search,setSearch]=useState("");
+  const [openId,setOpenId]=useState(null);
+  const [showAdd,setShowAdd]=useState(false);
+  const [jobId,setJobId]=useState(jobs?.[0]?.id||"");
+  const [room,setRoom]=useState("");
+  const [itemList,setItemList]=useState("");
+  const [files,setFiles]=useState([]);
+  const [notice,setNotice]=useState(null);
+  const [busy,setBusy]=useState(false);
+
+  async function load(){
+    const ids=jobs.map(j=>j.id); if(!ids.length){setLoading(false);return;}
+    setLoading(true);
+    const {data}=await supabase.from("job_content_boxes").select("*").in("job_id",ids).order("box_number",{ascending:true});
+    setBoxes(data||[]); setLoading(false);
+  }
+  useEffect(()=>{ load(); },[jobs.map(j=>j.id).join(",")]);
+
+  async function addBox(){
+    if(!jobId){setNotice({ok:false,text:"Choose a project first."});return;}
+    setBusy(true); setNotice(null);
+    try{
+      const urls=[]; for(const f of files){ urls.push(await adminFileToDataUrl(f)); }
+      const row={
+        id:"BOX-"+Date.now(), job_id:jobId, box_number:nextBoxNumber(jobId,boxes),
+        room:room.trim()||null, item_list:itemList.trim()||null,
+        photo_urls:urls, created_by:clientName||"Client",
+      };
+      const {error}=await insertContentBox(row);
+      if(error) throw error;
+      setNotice({ok:true,text:"Box added."});
+      setRoom("");setItemList("");setFiles([]);setShowAdd(false);
+      await load();
+    }catch(e){ setNotice({ok:false,text:e.message||"Could not add box."}); }
+    setBusy(false);
+  }
+
+  const jobLookup=Object.fromEntries(jobs.map(j=>[j.id,j]));
+  const filtered=boxes.filter(b=>{
+    if(!search.trim()) return true;
+    const q=search.trim().toLowerCase();
+    return String(b.box_number||"").includes(q) || (b.room||"").toLowerCase().includes(q) || (b.item_list||"").toLowerCase().includes(q);
+  });
+  const openBox=boxes.find(b=>b.id===openId);
+
+  if(loading) return <div className="panel empty">Loading contents…</div>;
+
+  return <div className="panel cb-panel">
+    <style>{`
+      .cb-panel .panel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+      .cb-search{border:1px solid ${BRAND.border};border-radius:9px;height:38px;padding:0 12px;font-size:12px;flex:1;min-width:180px}
+      .cb-add-btn{border:0;border-radius:9px;background:${BRAND.blue};color:#fff;font-weight:800;font-size:11px;height:38px;padding:0 16px;cursor:pointer}
+      .cb-form{border:1px solid ${BRAND.border};border-radius:11px;padding:14px;margin-bottom:14px;background:${BRAND.pale}}
+      .cb-form label{display:flex;flex-direction:column;gap:5px;font-size:10px;font-weight:800;color:${BRAND.navy};margin-bottom:10px}
+      .cb-form input,.cb-form select,.cb-form textarea{border:1px solid ${BRAND.border};border-radius:8px;padding:8px 10px;font-size:12px;background:#fff}
+      .cb-form textarea{min-height:70px;resize:vertical}
+      .cb-form-actions{display:flex;gap:8px;align-items:center}
+      .cb-cancel{border:1px solid ${BRAND.border};background:#fff;border-radius:8px;height:36px;padding:0 12px;font-size:11px;font-weight:800;color:${BRAND.navy}}
+      .cb-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}
+      .cb-card{border:1px solid ${BRAND.border};border-radius:11px;overflow:hidden;background:#fff;text-align:left;cursor:pointer}
+      .cb-thumb{height:120px;background:${BRAND.pale};display:flex;align-items:center;justify-content:center;color:${BRAND.muted};font-size:28px}
+      .cb-thumb img{width:100%;height:100%;object-fit:cover}
+      .cb-card-body{padding:10px 11px}
+      .cb-card-body strong{display:block;font-size:12px;color:${BRAND.navy}}
+      .cb-card-body small{display:block;font-size:10px;color:${BRAND.muted};margin-top:2px;line-height:1.4;max-height:2.8em;overflow:hidden}
+      .cb-modal-backdrop{position:fixed;inset:0;background:rgba(7,43,97,.55);display:flex;align-items:center;justify-content:center;z-index:80;padding:16px}
+      .cb-modal{background:#fff;border-radius:14px;max-width:480px;width:100%;max-height:88vh;overflow:auto;padding:18px}
+      .cb-modal h3{margin:0 0 4px;color:${BRAND.navy}}
+      .cb-modal-photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin:10px 0}
+      .cb-modal-photos img{width:100%;border-radius:8px;object-fit:cover;aspect-ratio:1}
+      .cb-modal-close{float:right;border:0;background:transparent;font-size:18px;cursor:pointer;color:${BRAND.muted}}
+      .cb-qr{display:flex;align-items:center;gap:12px;margin-top:12px;padding-top:12px;border-top:1px solid ${BRAND.border}}
+      .cb-qr img{width:96px;height:96px;border:1px solid ${BRAND.border};border-radius:8px}
+    `}</style>
+    <div className="panel-head">
+      <h2 style={{margin:0}}>My Contents</h2>
+      <input className="cb-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by box #, room, or item..." />
+      <button className="cb-add-btn" onClick={()=>setShowAdd(v=>!v)}>{showAdd?"Cancel":"+ Add a Box"}</button>
+    </div>
+
+    {showAdd && <div className="cb-form">
+      {jobs.length>1 && <label>Project<select value={jobId} onChange={e=>setJobId(e.target.value)}>{jobs.map(j=><option key={j.id} value={j.id}>{j.address||j.customer_name}</option>)}</select></label>}
+      <label>Room / Area (optional)<input value={room} onChange={e=>setRoom(e.target.value)} placeholder="e.g. Basement, Master Bedroom"/></label>
+      <label>What's in this box?<textarea value={itemList} onChange={e=>setItemList(e.target.value)} placeholder="e.g. Board games, holiday decorations, small bookshelf"/></label>
+      <label>Photo(s)<input type="file" accept="image/*" multiple onChange={e=>setFiles(Array.from(e.target.files||[]))}/></label>
+      <div className="cb-form-actions">
+        <button className="cb-add-btn" disabled={busy} onClick={addBox}>{busy?"Saving…":"Save Box"}</button>
+        <button className="cb-cancel" onClick={()=>setShowAdd(false)}>Cancel</button>
+      </div>
+      {notice && <AdminNotice notice={notice}/>}
+    </div>}
+
+    {!showAdd && notice && <AdminNotice notice={notice}/>}
+
+    {filtered.length===0
+      ? <div className="empty">No content boxes yet. Use “+ Add a Box” to log what’s in storage.</div>
+      : <div className="cb-grid">{filtered.map(b=>{
+          const thumb=(b.photo_urls&&b.photo_urls[0])||null;
+          return <button key={b.id} className="cb-card" onClick={()=>setOpenId(b.id)}>
+            <div className="cb-thumb">{thumb?<img src={thumb} alt=""/>:"▤"}</div>
+            <div className="cb-card-body">
+              <strong>Box #{b.box_number}{b.room?` — ${b.room}`:""}</strong>
+              <small>{b.item_list||"No description yet"}</small>
+            </div>
+          </button>;
+        })}</div>}
+
+    {openBox && <div className="cb-modal-backdrop" onClick={()=>setOpenId(null)}>
+      <div className="cb-modal" onClick={e=>e.stopPropagation()}>
+        <button className="cb-modal-close" onClick={()=>setOpenId(null)}>✕</button>
+        <h3>Box #{openBox.box_number}{openBox.room?` — ${openBox.room}`:""}</h3>
+        <small style={{color:BRAND.muted}}>{jobLookup[openBox.job_id]?.address || jobLookup[openBox.job_id]?.customer_name || ""}</small>
+        {openBox.photo_urls?.length>0 && <div className="cb-modal-photos">{openBox.photo_urls.map((u,i)=><img key={i} src={u} alt=""/>)}</div>}
+        <p style={{fontSize:12,color:BRAND.text,lineHeight:1.5}}>{openBox.item_list||"No description added."}</p>
+        <div className="cb-qr">
+          <img src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(window.location.origin+"/#box/"+openBox.box_code)}`} alt="Box QR code"/>
+          <div><small style={{display:"block",color:BRAND.muted,fontSize:10}}>Scan to view this box</small><strong style={{fontSize:12,color:BRAND.navy}}>Code: {openBox.box_code}</strong></div>
+        </div>
+      </div>
+    </div>}
+  </div>;
+}
+
 function BillingView({ jobs }) {
   const [invoices,setInvoices]=useState([]);
   useEffect(()=>{ (async()=>{
@@ -586,6 +712,22 @@ function adminFileToDataUrl(file) {
     r.onerror=()=>reject(r.error || new Error("Unable to read file."));
     r.readAsDataURL(file);
   });
+}
+
+function genBoxCode(){
+  return (Math.random().toString(36).slice(2,6)+Date.now().toString(36).slice(-4)).toUpperCase();
+}
+function nextBoxNumber(jobId, boxes){
+  const nums=(boxes||[]).filter(b=>b.job_id===jobId).map(b=>b.box_number||0);
+  return (nums.length?Math.max(...nums):0)+1;
+}
+async function insertContentBox(row){
+  for(let i=0;i<4;i++){
+    const {data,error}=await supabase.from("job_content_boxes").insert({...row,box_code:genBoxCode()}).select().maybeSingle();
+    if(!error) return {data,error:null};
+    if(!/duplicate key|unique/i.test(error.message||"")) return {data:null,error};
+  }
+  return {data:null,error:new Error("Could not generate a unique box code. Please try again.")};
 }
 
 function AdminNotice({ notice }) {
@@ -976,26 +1118,85 @@ function AdminAuthorizations({ data, reload }) {
   </div>;
 }
 
+function AdminContentBoxes({ data, reload }) {
+  const [jobId,setJobId]=useState(data.jobs?.[0]?.id||"");
+  const [room,setRoom]=useState("");
+  const [storageLocation,setStorageLocation]=useState("");
+  const [itemList,setItemList]=useState("");
+  const [files,setFiles]=useState([]);
+  const [notice,setNotice]=useState(null);
+  const [busy,setBusy]=useState(false);
+  const boxes=data.contentBoxes||[];
+
+  async function upload(){
+    if(!jobId){setNotice({ok:false,text:"Choose a project first."});return;}
+    setBusy(true); setNotice(null);
+    try{
+      const urls=[]; for(const f of files){ urls.push(await adminFileToDataUrl(f)); }
+      const row={
+        id:"BOX-ADMIN-"+Date.now(), job_id:jobId, box_number:nextBoxNumber(jobId,boxes),
+        room:room.trim()||null, storage_location:storageLocation.trim()||null,
+        item_list:itemList.trim()||null, photo_urls:urls, created_by:"Client Portal Admin",
+      };
+      const {error}=await insertContentBox(row);
+      if(error) throw error;
+      setNotice({ok:true,text:"Box added and QR code generated."});
+      setRoom("");setStorageLocation("");setItemList("");setFiles([]);
+      await reload();
+    }catch(e){ setNotice({ok:false,text:e.message||"Could not add box."}); }
+    setBusy(false);
+  }
+
+  async function remove(id){
+    if(!window.confirm("Remove this content box? This cannot be undone.")) return;
+    const {error}=await supabase.from("job_content_boxes").delete().eq("id",id);
+    if(error) setNotice({ok:false,text:error.message}); else {setNotice({ok:true,text:"Box removed."});await reload();}
+  }
+
+  return <div className="adm-two">
+    <div className="adm-card">
+      <div className="adm-card-head"><div><h3>Add Content Box</h3><p>Photograph and label a box for a client's project. A printable QR code is generated automatically.</p></div></div>
+      <label className="adm-label">Project<select value={jobId} onChange={e=>setJobId(e.target.value)}><option value="">Select project…</option>{(data.jobs||[]).map(j=><option key={j.id} value={j.id}>{j.customer_name} — {j.address||j.id}</option>)}</select></label>
+      <div className="adm-form-grid">
+        <label>Room / Area<input value={room} onChange={e=>setRoom(e.target.value)} placeholder="e.g. Basement"/></label>
+        <label>Warehouse / Storage Location<input value={storageLocation} onChange={e=>setStorageLocation(e.target.value)} placeholder="e.g. Warehouse Shelf A3"/></label>
+        <label className="adm-span-2">Contents<textarea value={itemList} onChange={e=>setItemList(e.target.value)} placeholder="What's in this box?"/></label>
+        <label className="adm-span-2">Photo(s)<input type="file" accept="image/*" multiple onChange={e=>setFiles(Array.from(e.target.files||[]))}/></label>
+      </div>
+      <button className="adm-primary" disabled={busy} onClick={upload}>{busy?"Saving…":"Add Box & Generate QR"}</button>
+      <AdminNotice notice={notice}/>
+    </div>
+    <div className="adm-card adm-list-card">
+      <div className="adm-card-head"><div><h3>Content Boxes</h3><p>{boxes.length} total</p></div></div>
+      <div className="adm-doc-list">{boxes.slice(0,50).map(b=>{
+        const job=(data.jobs||[]).find(j=>j.id===b.job_id);
+        return <div key={b.id}><span><strong>Box #{b.box_number}{b.room?` — ${b.room}`:""}</strong><small>{job?.customer_name||b.job_id} · {b.box_code}{b.storage_location?` · ${b.storage_location}`:""}</small></span><a href={`#box/${b.box_code}`} target="_blank" rel="noreferrer">Print Label</a><button onClick={()=>remove(b.id)}>Remove</button></div>;
+      })}</div>
+    </div>
+  </div>;
+}
+
 function AdminShell() {
   const [unlocked,setUnlocked]=useState(()=>sessionStorage.getItem("sh_admin_unlocked")==="1");
   const [pass,setPass]=useState("");
   const [badPass,setBadPass]=useState(false);
   const [tab,setTab]=useState("overview");
   const [loading,setLoading]=useState(false);
-  const [data,setData]=useState({jobs:[],docs:[],meta:[],authorizations:[]});
+  const [data,setData]=useState({jobs:[],docs:[],meta:[],authorizations:[],contentBoxes:[]});
   const [loadError,setLoadError]=useState("");
 
   async function reload(){
     setLoading(true);setLoadError("");
-    const [jobsRes,docsRes,metaRes,authRes]=await Promise.all([
+    const [jobsRes,docsRes,metaRes,authRes,boxesRes]=await Promise.all([
       supabase.from("jobs").select("*").order("submitted_at",{ascending:false}),
       supabase.from("documents").select("id,name,description,file_type,doc_type,uploaded_by,uploaded_at,linked_job_id").order("uploaded_at",{ascending:false}),
       supabase.from("client_portal_meta").select("email,visible_tabs,must_reset,password_set_at"),
       supabase.from("work_authorizations").select("*").order("created_at",{ascending:false}),
+      supabase.from("job_content_boxes").select("*").order("created_at",{ascending:false}),
     ]);
-    const err=jobsRes.error||docsRes.error||metaRes.error||authRes.error;
+    const err=jobsRes.error||docsRes.error||metaRes.error||authRes.error||boxesRes.error;
     if(err) setLoadError(err.message);
-    setData({jobs:jobsRes.data||[],docs:docsRes.data||[],meta:metaRes.data||[],authorizations:authRes.data||[]});
+    setData({jobs:jobsRes.data||[],docs:docsRes.data||[],meta:metaRes.data||[],authorizations:authRes.data||[],contentBoxes:boxesRes.data||[]});
     setLoading(false);
   }
   useEffect(()=>{if(unlocked) reload()},[unlocked]);
@@ -1007,6 +1208,7 @@ function AdminShell() {
 
   const tabs=[
     ["overview","⌂","Overview"],["clients","◎","Clients"],["projects","▣","Projects"],["documents","▤","Documents"],
+    ["contentboxes","▥","Content Boxes"],
     ["updates","◌","Updates"],["passwords","⌁","Passwords"],["visibility","◫","Visibility"],["authorizations","✓","Authorizations"]
   ];
 
@@ -1046,6 +1248,7 @@ function AdminShell() {
           {tab==="clients"&&<AdminClients data={data} reload={reload}/>}
           {tab==="projects"&&<AdminProjects data={data} reload={reload}/>}
           {tab==="documents"&&<AdminDocuments data={data} reload={reload}/>}
+          {tab==="contentboxes"&&<AdminContentBoxes data={data} reload={reload}/>}
           {tab==="updates"&&<AdminUpdates data={data}/>}
           {tab==="passwords"&&<AdminPasswords data={data} reload={reload}/>}
           {tab==="visibility"&&<AdminVisibility data={data} reload={reload}/>}
@@ -1215,7 +1418,7 @@ function ClientApp({ session }) {
           {view==="projects"&&!openJob&&<ProjectsView jobs={jobs} onOpen={setOpenJobId}/>}
           {view==="projects"&&openJob&&<JobDetail job={openJob} onBack={()=>setOpenJobId(null)} onGoMessages={()=>{setOpenJobId(null);setView("messages")}}/>}
           {view==="messages"&&<MessagesView jobs={jobs} clientName={clientName}/>}
-          {view==="contents"&&<DocumentsView jobs={jobs}/>}
+          {view==="contents"&&<ContentsView jobs={jobs} clientName={clientName}/>}
           {view==="approvals"&&<ApprovalsView jobs={jobs} clientName={clientName}/>}
           {view==="invoices"&&<DocumentsView jobs={jobs} type="invoice"/>}
           {view==="billing"&&<BillingView jobs={jobs}/>}
@@ -1347,6 +1550,48 @@ function ClientApp({ session }) {
   </div>;
 }
 
+function BoxScanScreen({ boxCode }) {
+  const [state,setState]=useState({loading:true,box:null,job:null,error:false});
+  useEffect(()=>{ (async()=>{
+    const {data:box}=await supabase.from("job_content_boxes").select("*").eq("box_code",boxCode).maybeSingle();
+    if(!box){ setState({loading:false,box:null,job:null,error:true}); return; }
+    const {data:job}=await supabase.from("jobs").select("customer_name,address").eq("id",box.job_id).maybeSingle();
+    setState({loading:false,box,job:job||null,error:false});
+  })(); },[boxCode]);
+
+  return <>
+    <style>{`
+      *{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif}
+      .box-scan{min-height:100vh;background:linear-gradient(rgba(5,38,89,.45),rgba(5,38,89,.68)),url("${CLIENT_BLUEPRINT_DARK}") center/cover fixed no-repeat;display:flex;flex-direction:column;align-items:center;padding:28px 16px}
+      .box-scan-card{width:min(520px,100%);background:#fff;border-radius:16px;padding:24px;box-shadow:0 20px 55px rgba(0,0,0,.28)}
+      .box-scan-card img.logo{width:240px;max-width:80%;height:auto;display:block;margin:0 auto 16px}
+      .box-scan-card h2{color:${BRAND.navy};margin:0 0 4px;text-align:center}
+      .box-scan-card>p.sub{text-align:center;color:${BRAND.muted};font-size:12px;margin:0 0 18px}
+      .box-scan-photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin:14px 0}
+      .box-scan-photos img{width:100%;border-radius:9px;object-fit:cover;aspect-ratio:1;border:1px solid ${BRAND.border}}
+      .box-scan-row{border-top:1px solid ${BRAND.border};padding:12px 0;font-size:13px;color:${BRAND.text}}
+      .box-scan-row strong{display:block;color:${BRAND.navy};font-size:11px;text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px}
+      .box-scan-footer{text-align:center;font-size:11px;color:${BRAND.muted};margin-top:18px}
+    `}</style>
+    <div className="box-scan"><div className="box-scan-card">
+      <img className="logo" src={CLIENT_HEADER_LOGO} alt="S&H Services Spokane LLC"/>
+      {state.loading && <p className="sub">Loading box…</p>}
+      {!state.loading && state.error && <>
+        <h2>Box Not Found</h2>
+        <p className="sub">This QR code doesn't match a box on file. If you found this label on a job site, please call us so we can help.</p>
+      </>}
+      {!state.loading && state.box && <>
+        <h2>Box #{state.box.box_number}{state.box.room?` — ${state.box.room}`:""}</h2>
+        <p className="sub">{state.job?.customer_name||""}{state.job?.address?` · ${state.job.address}`:""}</p>
+        {state.box.photo_urls?.length>0 && <div className="box-scan-photos">{state.box.photo_urls.map((u,i)=><img key={i} src={u} alt=""/>)}</div>}
+        <div className="box-scan-row"><strong>Contents</strong>{state.box.item_list||"No description on file."}</div>
+        {state.box.storage_location && <div className="box-scan-row"><strong>Storage Location</strong>{state.box.storage_location}</div>}
+      </>}
+      <div className="box-scan-footer">S&amp;H Services Spokane LLC &nbsp;|&nbsp; {PHONE}</div>
+    </div></div>
+  </>;
+}
+
 export default function App() {
   const hash = useHashRoute();
   const [session,setSession]=useState(undefined);
@@ -1358,6 +1603,7 @@ export default function App() {
   },[]);
   if (hash==="#admin") return <AdminShell />;
   if (hash.startsWith("#auth/")) return <AuthorizationRouteScreen authCode={hash.replace("#auth/","")} />;
+  if (hash.startsWith("#box/")) return <BoxScanScreen boxCode={hash.replace("#box/","")} />;
   if (recovery && session) return <PasswordRecoveryScreen />;
   if (session===undefined) return <div style={{minHeight:"100vh"}}/>;
   if (!session) return <LoginScreen />;
