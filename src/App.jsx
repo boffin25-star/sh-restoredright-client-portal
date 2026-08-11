@@ -526,6 +526,10 @@ function ContentsView({ jobs, clientName }) {
     setBoxes(data||[]); setLoading(false);
   }
   useEffect(()=>{ load(); },[jobs.map(j=>j.id).join(",")]);
+  useEffect(()=>{
+    if(!jobs.length) return;
+    if(!jobId || !jobs.some(j=>j.id===jobId)) setJobId(jobs[0].id);
+  },[jobs.map(j=>j.id).join(",")]);
 
   async function addBox(){
     if(!jobId){setNotice({ok:false,text:"Choose a project first."});return;}
@@ -590,7 +594,7 @@ function ContentsView({ jobs, clientName }) {
     </div>
 
     {showAdd && <div className="cb-form">
-      {jobs.length>1 && <label>Project<select value={jobId} onChange={e=>setJobId(e.target.value)}>{jobs.map(j=><option key={j.id} value={j.id}>{j.address||j.customer_name}</option>)}</select></label>}
+      <label>Project<select value={jobId} onChange={e=>setJobId(e.target.value)}>{jobs.map(j=><option key={j.id} value={j.id}>{j.address||j.customer_name}</option>)}</select></label>
       <label>Room / Area (optional)<input value={room} onChange={e=>setRoom(e.target.value)} placeholder="e.g. Basement, Master Bedroom"/></label>
       <label>What's in this box?<textarea value={itemList} onChange={e=>setItemList(e.target.value)} placeholder="e.g. Board games, holiday decorations, small bookshelf"/></label>
       <label>Photo(s)<input type="file" accept="image/*" multiple onChange={e=>setFiles(Array.from(e.target.files||[]))}/></label>
@@ -607,10 +611,12 @@ function ContentsView({ jobs, clientName }) {
       ? <div className="empty">No content boxes yet. Use “+ Add a Box” to log what’s in storage.</div>
       : <div className="cb-grid">{filtered.map(b=>{
           const thumb=(b.photo_urls&&b.photo_urls[0])||null;
+          const boxJob=jobLookup[b.job_id];
           return <button key={b.id} className="cb-card" onClick={()=>setOpenId(b.id)}>
             <div className="cb-thumb">{thumb?<img src={thumb} alt=""/>:"▤"}</div>
             <div className="cb-card-body">
               <strong>Box #{b.box_number}{b.room?` — ${b.room}`:""}</strong>
+              {jobs.length>1 && boxJob && <small style={{color:BRAND.blue,fontWeight:700}}>{boxJob.address||boxJob.customer_name}</small>}
               <small>{b.item_list||"No description yet"}</small>
             </div>
           </button>;
@@ -625,7 +631,7 @@ function ContentsView({ jobs, clientName }) {
         <p style={{fontSize:12,color:BRAND.text,lineHeight:1.5}}>{openBox.item_list||"No description added."}</p>
         <div className="cb-qr">
           <img src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(window.location.origin+"/#box/"+openBox.box_code)}`} alt="Box QR code"/>
-          <div><small style={{display:"block",color:BRAND.muted,fontSize:10}}>Scan to view this box</small><strong style={{fontSize:12,color:BRAND.navy}}>Code: {openBox.box_code}</strong></div>
+          <div><small style={{display:"block",color:BRAND.muted,fontSize:10}}>Scan to view this box</small><strong style={{fontSize:12,color:BRAND.navy}}>Code: {openBox.box_code}</strong><br/><a href={`#box-label/${openBox.box_code}`} target="_blank" rel="noreferrer" style={{fontSize:11,fontWeight:800,color:BRAND.blue}}>Print Label →</a></div>
         </div>
       </div>
     </div>}
@@ -1170,7 +1176,7 @@ function AdminContentBoxes({ data, reload }) {
       <div className="adm-card-head"><div><h3>Content Boxes</h3><p>{boxes.length} total</p></div></div>
       <div className="adm-doc-list">{boxes.slice(0,50).map(b=>{
         const job=(data.jobs||[]).find(j=>j.id===b.job_id);
-        return <div key={b.id}><span><strong>Box #{b.box_number}{b.room?` — ${b.room}`:""}</strong><small>{job?.customer_name||b.job_id} · {b.box_code}{b.storage_location?` · ${b.storage_location}`:""}</small></span><a href={`#box/${b.box_code}`} target="_blank" rel="noreferrer">Print Label</a><button onClick={()=>remove(b.id)}>Remove</button></div>;
+        return <div key={b.id}><span><strong>Box #{b.box_number}{b.room?` — ${b.room}`:""}</strong><small>{job?.customer_name||b.job_id} · {b.box_code}{b.storage_location?` · ${b.storage_location}`:""}</small></span><a href={`#box-label/${b.box_code}`} target="_blank" rel="noreferrer">Print Label</a><button onClick={()=>remove(b.id)}>Remove</button></div>;
       })}</div>
     </div>
   </div>;
@@ -1550,6 +1556,53 @@ function ClientApp({ session }) {
   </div>;
 }
 
+function BoxLabelScreen({ boxCode }) {
+  const [state,setState]=useState({loading:true,box:null,job:null,error:false});
+  useEffect(()=>{ (async()=>{
+    const {data:box}=await supabase.from("job_content_boxes").select("*").eq("box_code",boxCode).maybeSingle();
+    if(!box){ setState({loading:false,box:null,job:null,error:true}); return; }
+    const {data:job}=await supabase.from("jobs").select("customer_name,address").eq("id",box.job_id).maybeSingle();
+    setState({loading:false,box,job:job||null,error:false});
+  })(); },[boxCode]);
+
+  return <>
+    <style>{`
+      *{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif}
+      .box-label-page{min-height:100vh;background:${BRAND.offWhite};display:flex;flex-direction:column;align-items:center;padding:28px 16px}
+      .box-label-toolbar{width:min(420px,100%);display:flex;justify-content:flex-end;margin-bottom:10px}
+      .box-label-print-btn{border:0;border-radius:9px;background:${BRAND.blue};color:#fff;font-weight:800;font-size:12px;height:38px;padding:0 18px;cursor:pointer}
+      .box-label-card{width:min(420px,100%);background:#fff;border:1.5px solid ${BRAND.border};border-radius:14px;padding:26px;text-align:center;box-shadow:0 12px 30px rgba(2,24,61,.12)}
+      .box-label-brand{font-size:10px;font-weight:800;letter-spacing:.06em;color:${BRAND.muted};text-transform:uppercase}
+      .box-label-number{font-size:38px;font-weight:900;color:${BRAND.navy};margin:6px 0 2px;line-height:1.05}
+      .box-label-room{font-size:13px;color:${BRAND.text};margin-bottom:14px}
+      .box-label-card img.qr{width:200px;height:200px;margin:6px auto}
+      .box-label-code{font-size:12px;font-weight:800;letter-spacing:.04em;color:${BRAND.navy};margin-top:8px}
+      .box-label-job{font-size:11px;color:${BRAND.muted};margin-top:10px;border-top:1px solid ${BRAND.border};padding-top:10px}
+      @media print{
+        .box-label-toolbar{display:none}
+        body{background:#fff}
+        .box-label-page{padding:0;background:#fff}
+        .box-label-card{box-shadow:none;border:1px solid #000;width:4in;padding:16px}
+      }
+    `}</style>
+    <div className="box-label-page">
+      <div className="box-label-toolbar"><button className="box-label-print-btn" onClick={()=>window.print()}>Print This Label</button></div>
+      <div className="box-label-card">
+        {state.loading && <p>Loading…</p>}
+        {!state.loading && state.error && <p>Box not found.</p>}
+        {!state.loading && state.box && <>
+          <div className="box-label-brand">S&amp;H Services Spokane — Contents Box</div>
+          <div className="box-label-number">Box #{state.box.box_number}</div>
+          {state.box.room && <div className="box-label-room">{state.box.room}</div>}
+          <img className="qr" src={`https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(window.location.origin+"/#box/"+state.box.box_code)}`} alt="Box QR code"/>
+          <div className="box-label-code">Code: {state.box.box_code}</div>
+          <div className="box-label-job">{state.job?.customer_name||""}{state.job?.address?` — ${state.job.address}`:""}</div>
+        </>}
+      </div>
+    </div>
+  </>;
+}
+
 function BoxScanScreen({ boxCode }) {
   const [state,setState]=useState({loading:true,box:null,job:null,error:false});
   useEffect(()=>{ (async()=>{
@@ -1604,6 +1657,7 @@ export default function App() {
   if (hash==="#admin") return <AdminShell />;
   if (hash.startsWith("#auth/")) return <AuthorizationRouteScreen authCode={hash.replace("#auth/","")} />;
   if (hash.startsWith("#box/")) return <BoxScanScreen boxCode={hash.replace("#box/","")} />;
+  if (hash.startsWith("#box-label/")) return <BoxLabelScreen boxCode={hash.replace("#box-label/","")} />;
   if (recovery && session) return <PasswordRecoveryScreen />;
   if (session===undefined) return <div style={{minHeight:"100vh"}}/>;
   if (!session) return <LoginScreen />;
