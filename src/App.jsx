@@ -539,7 +539,7 @@ function ContentsView({ jobs, clientName }) {
     if(!jobId){setNotice({ok:false,text:"Choose a project first."});return;}
     setBusy(true); setNotice(null);
     try{
-      const urls=[]; for(const f of files){ urls.push(await adminFileToDataUrl(f)); }
+      const urls=[]; for(const f of files){ urls.push(await resizeImageToDataUrl(f)); }
       const row={
         id:"BOX-"+Date.now(), job_id:jobId, box_number:nextBoxNumber(jobId,boxes),
         room:room.trim()||null, item_list:itemList.trim()||null,
@@ -724,6 +724,34 @@ function adminFileToDataUrl(file) {
     r.onload=()=>resolve(r.result);
     r.onerror=()=>reject(r.error || new Error("Unable to read file."));
     r.readAsDataURL(file);
+  });
+}
+
+function resizeImageToDataUrl(file, maxDim=1400, quality=0.82){
+  return new Promise((resolve,reject)=>{
+    if(!file.type||!file.type.startsWith("image/")){ adminFileToDataUrl(file).then(resolve,reject); return; }
+    const reader=new FileReader();
+    reader.onerror=()=>reject(reader.error||new Error("Unable to read the photo."));
+    reader.onload=()=>{
+      const img=new Image();
+      img.onerror=()=>reject(new Error("Unable to process the photo — try a different file."));
+      img.onload=()=>{
+        let width=img.naturalWidth||img.width, height=img.naturalHeight||img.height;
+        if(width>maxDim||height>maxDim){
+          if(width>height){ height=Math.round(height*(maxDim/width)); width=maxDim; }
+          else{ width=Math.round(width*(maxDim/height)); height=maxDim; }
+        }
+        const canvas=document.createElement("canvas");
+        canvas.width=width; canvas.height=height;
+        const ctx=canvas.getContext("2d");
+        if(!ctx){ resolve(reader.result); return; }
+        ctx.drawImage(img,0,0,width,height);
+        try{ resolve(canvas.toDataURL("image/jpeg",quality)); }
+        catch(e){ resolve(reader.result); }
+      };
+      img.src=reader.result;
+    };
+    reader.readAsDataURL(file);
   });
 }
 
@@ -934,7 +962,7 @@ function AdminProjects({ data, reload }) {
         <label className="adm-span-2">Project Address<input value={form.address} onChange={e=>setForm(f=>({...f,address:e.target.value}))}/></label>
         <label>Workflow Stage<select value={form.workflow_stage} onChange={e=>setForm(f=>({...f,workflow_stage:e.target.value}))}>{[...WORKFLOW_STAGES,...TERMINAL_STAGES].map(x=><option key={x}>{x}</option>)}</select></label>
         <label>Project Lead<input value={form.project_lead} onChange={e=>setForm(f=>({...f,project_lead:e.target.value}))}/></label>
-        <label>Project Lead Photo<input type="file" accept="image/*" onChange={async e=>{const f=e.target.files?.[0]; if(!f) return; const url=await adminFileToDataUrl(f); setForm(fm=>({...fm,project_lead_photo_url:url}));}}/>{form.project_lead_photo_url && <img src={form.project_lead_photo_url} alt="" style={{width:40,height:40,borderRadius:"50%",objectFit:"cover",marginTop:6}}/>}</label>
+        <label>Project Lead Photo<input type="file" accept="image/*" onChange={async e=>{const f=e.target.files?.[0]; if(!f) return; const url=await resizeImageToDataUrl(f); setForm(fm=>({...fm,project_lead_photo_url:url}));}}/>{form.project_lead_photo_url && <img src={form.project_lead_photo_url} alt="" style={{width:40,height:40,borderRadius:"50%",objectFit:"cover",marginTop:6}}/>}</label>
         <label>Claim Number<input value={form.claim_number} onChange={e=>setForm(f=>({...f,claim_number:e.target.value}))}/></label>
         <label>Adjuster Name<input value={form.adjuster_name} onChange={e=>setForm(f=>({...f,adjuster_name:e.target.value}))}/></label>
         <label>Adjuster Phone<input value={form.adjuster_phone} onChange={e=>setForm(f=>({...f,adjuster_phone:e.target.value}))}/></label>
@@ -1155,7 +1183,7 @@ function AdminContentBoxes({ data, reload }) {
     if(!form.jobId){setNotice({ok:false,text:"Choose a project first."});return;}
     setBusy(true); setNotice(null);
     try{
-      const newUrls=[]; for(const f of form.newFiles){ newUrls.push(await adminFileToDataUrl(f)); }
+      const newUrls=[]; for(const f of form.newFiles){ newUrls.push(await resizeImageToDataUrl(f)); }
       const photo_urls=[...form.existingPhotos,...newUrls];
       if(mode==="add"){
         const row={
