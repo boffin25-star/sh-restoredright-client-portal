@@ -1193,7 +1193,7 @@ function AdminContentBoxes({ data, reload }) {
 
   return <div className="adm-two">
     <div className="adm-card">
-      <style>{`.cb-admin-photo-strip{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}.cb-admin-photo-thumb{position:relative;width:56px;height:56px}.cb-admin-photo-thumb img{width:100%;height:100%;object-fit:cover;border-radius:6px;border:1px solid ${BRAND.border}}.cb-admin-photo-thumb button{position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;border:0;background:${BRAND.red};color:#fff;font-size:10px;line-height:1;cursor:pointer}`}</style>
+      <style>{`.cb-admin-photo-strip{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}.cb-admin-photo-thumb{position:relative;width:56px;height:56px}.cb-admin-photo-thumb img{width:100%;height:100%;object-fit:cover;border-radius:6px;border:1px solid ${BRAND.border}}.cb-admin-photo-thumb button{position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;border:0;background:${BRAND.red};color:#fff;font-size:10px;line-height:1;cursor:pointer}.cb-admin-pending{display:block;margin-top:6px;color:${BRAND.amber};font-weight:700}`}</style>
       <div className="adm-card-head"><div><h3>{mode==="add"?"Add Content Box":`Edit Box #${editingBox?.box_number??""}`}</h3><p>{mode==="add"?"Photograph and label a box for a client's project. A printable QR code is generated automatically.":"Update this box's room, contents, storage location, or photos."}</p></div>{mode==="edit"&&<button className="adm-ghost" onClick={startAdd}>New Box</button>}</div>
       <label className="adm-label">Project<select value={form.jobId} disabled={mode==="edit"} onChange={e=>setForm(f=>({...f,jobId:e.target.value}))}><option value="">Select project…</option>{(data.jobs||[]).map(j=><option key={j.id} value={j.id}>{j.customer_name} — {j.address||j.id}</option>)}</select></label>
       <div className="adm-form-grid">
@@ -1203,6 +1203,7 @@ function AdminContentBoxes({ data, reload }) {
         <label className="adm-span-2">Photo(s)
           {form.existingPhotos.length>0 && <div className="cb-admin-photo-strip">{form.existingPhotos.map((u,i)=><div key={i} className="cb-admin-photo-thumb"><img src={u} alt=""/><button type="button" onClick={()=>removeExistingPhoto(i)}>✕</button></div>)}</div>}
           <input type="file" accept="image/*" multiple onChange={e=>setForm(f=>({...f,newFiles:Array.from(e.target.files||[])}))}/>
+          {form.newFiles.length>0 && <small className="cb-admin-pending">{form.newFiles.length} new photo{form.newFiles.length>1?"s":""} selected — click "{mode==="add"?"Add Box & Generate QR":"Save Changes"}" below to upload {form.newFiles.length>1?"them":"it"}.</small>}
         </label>
       </div>
       <button className="adm-primary" disabled={busy} onClick={save}>{busy?"Saving…":mode==="add"?"Add Box & Generate QR":"Save Changes"}</button>
