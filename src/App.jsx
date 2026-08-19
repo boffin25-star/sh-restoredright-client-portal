@@ -136,7 +136,7 @@ function LoginScreen() {
 
   async function sendOtp() {
     setBusy(true); setError(null);
-    const { error: err } = await supabase.auth.signInWithOtp({ email: email.trim() });
+    const { error: err } = await supabase.auth.signInWithOtp({ email: email.trim(), options: { emailRedirectTo: window.location.origin } });
     setError(err ? err.message : { ok:true, text:"Check your email for your secure sign-in link." });
     setBusy(false);
   }
@@ -518,11 +518,13 @@ function ContentsView({ jobs, clientName }) {
   const [files,setFiles]=useState([]);
   const [notice,setNotice]=useState(null);
   const [busy,setBusy]=useState(false);
+  const [loadError,setLoadError]=useState(null);
 
   async function load(){
     const ids=jobs.map(j=>j.id); if(!ids.length){setLoading(false);return;}
-    setLoading(true);
-    const {data}=await supabase.from("job_content_boxes").select("*").in("job_id",ids).order("box_number",{ascending:true});
+    setLoading(true); setLoadError(null);
+    const {data,error}=await supabase.from("job_content_boxes").select("*").in("job_id",ids).order("box_number",{ascending:true});
+    if(error) setLoadError(error.message);
     setBoxes(data||[]); setLoading(false);
   }
   useEffect(()=>{ load(); },[jobs.map(j=>j.id).join(",")]);
@@ -592,6 +594,9 @@ function ContentsView({ jobs, clientName }) {
       <input className="cb-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by box #, room, or item..." />
       <button className="cb-add-btn" onClick={()=>setShowAdd(v=>!v)}>{showAdd?"Cancel":"+ Add a Box"}</button>
     </div>
+
+    {loadError && <div style={{border:"1px solid #DC2626",background:"#FEF2F2",color:"#991B1B",borderRadius:9,padding:"10px 12px",fontSize:12,marginBottom:12}}>Couldn't load content boxes: {loadError}</div>}
+    {!loadError && jobs.length===0 && <div style={{border:"1px solid #D97706",background:"#FFFBEB",color:"#92400E",borderRadius:9,padding:"10px 12px",fontSize:12,marginBottom:12}}>No projects are linked to this account, so there's nothing to show here.</div>}
 
     {showAdd && <div className="cb-form">
       <label>Project<select value={jobId} onChange={e=>setJobId(e.target.value)}>{jobs.map(j=><option key={j.id} value={j.id}>{j.address||j.customer_name}</option>)}</select></label>
