@@ -1311,12 +1311,16 @@ function ClientApp({ session }) {
   const [canScrollUp,setCanScrollUp]=useState(false);
   const [canScrollDown,setCanScrollDown]=useState(false);
   const email=session.user.email;
+  const [jobsError,setJobsError]=useState(null);
 
   useEffect(()=>{ (async()=>{
-    const [{data:jobRows},{data:metaRow}] = await Promise.all([
+    setJobsError(null);
+    const [{data:jobRows,error:jobsErr},{data:metaRow,error:metaErr}] = await Promise.all([
       supabase.from("jobs").select("*").eq("customer_email",email).order("created_at",{ascending:false}),
       supabase.from("client_portal_meta").select("visible_tabs").eq("email",email).maybeSingle(),
     ]);
+    if(jobsErr) setJobsError(jobsErr.message);
+    else if(metaErr) setJobsError("(meta) "+metaErr.message);
     const jr=jobRows || []; setJobs(jr);
     setVisibleTabs(metaRow?.visible_tabs?.length ? metaRow.visible_tabs : null);
     if (jr[0]?.id) {
@@ -1424,6 +1428,8 @@ function ClientApp({ session }) {
 
       <section className="workspace">
         <div className="workspace-inner">
+          {jobsError && <div style={{border:"1px solid #DC2626",background:"#FEF2F2",color:"#991B1B",borderRadius:9,padding:"10px 12px",fontSize:12,marginBottom:12}}>Couldn't load your projects (signed in as <b>{email}</b>): {jobsError}</div>}
+          {!jobsError && jobs.length===0 && <div style={{border:"1px solid #D97706",background:"#FFFBEB",color:"#92400E",borderRadius:9,padding:"10px 12px",fontSize:12,marginBottom:12}}>Signed in as <b>{email}</b> — no projects matched this exact email in the database.</div>}
           {view==="dashboard"&&<div className="desktop-welcome"><h1>Welcome back, {firstName}!</h1><p>Here’s what’s happening with your project today.</p></div>}
           {view==="dashboard"&&<DashboardView jobs={jobs} messages={messages} invoices={[]} onOpenProject={(id)=>{setOpenJobId(id);setView("projects")}} onNavigate={navigate}/>}
           {view==="projects"&&!openJob&&<ProjectsView jobs={jobs} onOpen={setOpenJobId}/>}
