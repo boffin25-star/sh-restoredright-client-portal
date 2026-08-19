@@ -1134,58 +1134,85 @@ function AdminAuthorizations({ data, reload }) {
 }
 
 function AdminContentBoxes({ data, reload }) {
-  const [jobId,setJobId]=useState(data.jobs?.[0]?.id||"");
-  const [room,setRoom]=useState("");
-  const [storageLocation,setStorageLocation]=useState("");
-  const [itemList,setItemList]=useState("");
-  const [files,setFiles]=useState([]);
+  const blank={jobId:data.jobs?.[0]?.id||"", room:"", storageLocation:"", itemList:"", existingPhotos:[], newFiles:[]};
+  const [mode,setMode]=useState("add");
+  const [selected,setSelected]=useState("");
+  const [form,setForm]=useState(blank);
   const [notice,setNotice]=useState(null);
   const [busy,setBusy]=useState(false);
   const boxes=data.contentBoxes||[];
 
-  async function upload(){
-    if(!jobId){setNotice({ok:false,text:"Choose a project first."});return;}
+  function startAdd(){ setMode("add"); setSelected(""); setForm({...blank,jobId:data.jobs?.[0]?.id||""}); setNotice(null); }
+  function edit(b){
+    setMode("edit"); setSelected(b.id); setNotice(null);
+    setForm({ jobId:b.job_id, room:b.room||"", storageLocation:b.storage_location||"", itemList:b.item_list||"", existingPhotos:b.photo_urls||[], newFiles:[] });
+  }
+  function removeExistingPhoto(idx){
+    setForm(f=>({...f,existingPhotos:f.existingPhotos.filter((_,i)=>i!==idx)}));
+  }
+
+  async function save(){
+    if(!form.jobId){setNotice({ok:false,text:"Choose a project first."});return;}
     setBusy(true); setNotice(null);
     try{
-      const urls=[]; for(const f of files){ urls.push(await adminFileToDataUrl(f)); }
-      const row={
-        id:"BOX-ADMIN-"+Date.now(), job_id:jobId, box_number:nextBoxNumber(jobId,boxes),
-        room:room.trim()||null, storage_location:storageLocation.trim()||null,
-        item_list:itemList.trim()||null, photo_urls:urls, created_by:"Client Portal Admin",
-      };
-      const {error}=await insertContentBox(row);
-      if(error) throw error;
-      setNotice({ok:true,text:"Box added and QR code generated."});
-      setRoom("");setStorageLocation("");setItemList("");setFiles([]);
+      const newUrls=[]; for(const f of form.newFiles){ newUrls.push(await adminFileToDataUrl(f)); }
+      const photo_urls=[...form.existingPhotos,...newUrls];
+      if(mode==="add"){
+        const row={
+          id:"BOX-ADMIN-"+Date.now(), job_id:form.jobId, box_number:nextBoxNumber(form.jobId,boxes),
+          room:form.room.trim()||null, storage_location:form.storageLocation.trim()||null,
+          item_list:form.itemList.trim()||null, photo_urls, created_by:"Client Portal Admin",
+        };
+        const {error}=await insertContentBox(row);
+        if(error) throw error;
+        setNotice({ok:true,text:"Box added and QR code generated."});
+        startAdd();
+      }else{
+        const {error}=await supabase.from("job_content_boxes").update({
+          room:form.room.trim()||null, storage_location:form.storageLocation.trim()||null,
+          item_list:form.itemList.trim()||null, photo_urls,
+        }).eq("id",selected);
+        if(error) throw error;
+        setNotice({ok:true,text:"Box updated."});
+      }
       await reload();
-    }catch(e){ setNotice({ok:false,text:e.message||"Could not add box."}); }
+    }catch(e){ setNotice({ok:false,text:e.message||"Could not save box."}); }
     setBusy(false);
   }
 
   async function remove(id){
     if(!window.confirm("Remove this content box? This cannot be undone.")) return;
     const {error}=await supabase.from("job_content_boxes").delete().eq("id",id);
-    if(error) setNotice({ok:false,text:error.message}); else {setNotice({ok:true,text:"Box removed."});await reload();}
+    if(error){ setNotice({ok:false,text:error.message}); return; }
+    setNotice({ok:true,text:"Box removed."});
+    if(selected===id) startAdd();
+    await reload();
   }
+
+  const editingBox=boxes.find(b=>b.id===selected);
 
   return <div className="adm-two">
     <div className="adm-card">
-      <div className="adm-card-head"><div><h3>Add Content Box</h3><p>Photograph and label a box for a client's project. A printable QR code is generated automatically.</p></div></div>
-      <label className="adm-label">Project<select value={jobId} onChange={e=>setJobId(e.target.value)}><option value="">Select project…</option>{(data.jobs||[]).map(j=><option key={j.id} value={j.id}>{j.customer_name} — {j.address||j.id}</option>)}</select></label>
+      <style>{`.cb-admin-photo-strip{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}.cb-admin-photo-thumb{position:relative;width:56px;height:56px}.cb-admin-photo-thumb img{width:100%;height:100%;object-fit:cover;border-radius:6px;border:1px solid ${BRAND.border}}.cb-admin-photo-thumb button{position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;border:0;background:${BRAND.red};color:#fff;font-size:10px;line-height:1;cursor:pointer}`}</style>
+      <div className="adm-card-head"><div><h3>{mode==="add"?"Add Content Box":`Edit Box #${editingBox?.box_number??""}`}</h3><p>{mode==="add"?"Photograph and label a box for a client's project. A printable QR code is generated automatically.":"Update this box's room, contents, storage location, or photos."}</p></div>{mode==="edit"&&<button className="adm-ghost" onClick={startAdd}>New Box</button>}</div>
+      <label className="adm-label">Project<select value={form.jobId} disabled={mode==="edit"} onChange={e=>setForm(f=>({...f,jobId:e.target.value}))}><option value="">Select project…</option>{(data.jobs||[]).map(j=><option key={j.id} value={j.id}>{j.customer_name} — {j.address||j.id}</option>)}</select></label>
       <div className="adm-form-grid">
-        <label>Room / Area<input value={room} onChange={e=>setRoom(e.target.value)} placeholder="e.g. Basement"/></label>
-        <label>Warehouse / Storage Location<input value={storageLocation} onChange={e=>setStorageLocation(e.target.value)} placeholder="e.g. Warehouse Shelf A3"/></label>
-        <label className="adm-span-2">Contents<textarea value={itemList} onChange={e=>setItemList(e.target.value)} placeholder="What's in this box?"/></label>
-        <label className="adm-span-2">Photo(s)<input type="file" accept="image/*" multiple onChange={e=>setFiles(Array.from(e.target.files||[]))}/></label>
+        <label>Room / Area<input value={form.room} onChange={e=>setForm(f=>({...f,room:e.target.value}))} placeholder="e.g. Basement"/></label>
+        <label>Warehouse / Storage Location<input value={form.storageLocation} onChange={e=>setForm(f=>({...f,storageLocation:e.target.value}))} placeholder="e.g. Warehouse Shelf A3"/></label>
+        <label className="adm-span-2">Contents<textarea value={form.itemList} onChange={e=>setForm(f=>({...f,itemList:e.target.value}))} placeholder="What's in this box?"/></label>
+        <label className="adm-span-2">Photo(s)
+          {form.existingPhotos.length>0 && <div className="cb-admin-photo-strip">{form.existingPhotos.map((u,i)=><div key={i} className="cb-admin-photo-thumb"><img src={u} alt=""/><button type="button" onClick={()=>removeExistingPhoto(i)}>✕</button></div>)}</div>}
+          <input type="file" accept="image/*" multiple onChange={e=>setForm(f=>({...f,newFiles:Array.from(e.target.files||[])}))}/>
+        </label>
       </div>
-      <button className="adm-primary" disabled={busy} onClick={upload}>{busy?"Saving…":"Add Box & Generate QR"}</button>
+      <button className="adm-primary" disabled={busy} onClick={save}>{busy?"Saving…":mode==="add"?"Add Box & Generate QR":"Save Changes"}</button>
       <AdminNotice notice={notice}/>
     </div>
     <div className="adm-card adm-list-card">
       <div className="adm-card-head"><div><h3>Content Boxes</h3><p>{boxes.length} total</p></div></div>
       <div className="adm-doc-list">{boxes.slice(0,50).map(b=>{
         const job=(data.jobs||[]).find(j=>j.id===b.job_id);
-        return <div key={b.id}><span><strong>Box #{b.box_number}{b.room?` — ${b.room}`:""}</strong><small>{job?.customer_name||b.job_id} · {b.box_code}{b.storage_location?` · ${b.storage_location}`:""}</small></span><a href={`#box-label/${b.box_code}`} target="_blank" rel="noreferrer">Print Label</a><button onClick={()=>remove(b.id)}>Remove</button></div>;
+        return <div key={b.id}><span><strong>Box #{b.box_number}{b.room?` — ${b.room}`:""}</strong><small>{job?.customer_name||b.job_id} · {b.box_code}{b.storage_location?` · ${b.storage_location}`:""}</small></span><button onClick={()=>edit(b)}>Edit</button><a href={`#box-label/${b.box_code}`} target="_blank" rel="noreferrer">Print Label</a><button onClick={()=>remove(b.id)}>Remove</button></div>;
       })}</div>
     </div>
   </div>;
